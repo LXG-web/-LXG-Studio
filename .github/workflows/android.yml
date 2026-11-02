@@ -16,40 +16,67 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Detect Gradle Version
-        id: gradle
+      - name: Locate Android Gradle Project
+        id: project
         shell: bash
         run: |
-          if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
-            VERSION=$(grep -oE 'gradle-[0-9]+(\.[0-9]+)*(-all|-bin)?\.zip' gradle/wrapper/gradle-wrapper.properties | head -1 | sed -E 's/gradle-([0-9.]+).*/\1/')
-          else
-            VERSION=""
+          echo "Searching for Gradle project..."
+
+          FILE=$(find . -type f \( \
+            -name settings.gradle.kts -o \
+            -name settings.gradle \
+          \) -not -path '*/.gradle/*' | head -n 1)
+
+          if [ -z "$FILE" ]; then
+            echo "ERROR: settings.gradle(.kts) not found!"
+            echo "Repository files:"
+            find . -maxdepth 4 -type f | head -200
+            exit 1
           fi
 
-          if [ -z "$VERSION" ]; then
-            VERSION="8.13"
+          DIR=$(dirname "$FILE")
+          if [ "$DIR" = "." ]; then
+            DIR="."
+          fi
+
+          echo "Project found at: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Detect Gradle Version
+        id: gradle
+        run: |
+          DIR="${{ steps.project.outputs.dir }}"
+          FILE="$DIR/gradle/wrapper/gradle-wrapper.properties"
+
+          VERSION="8.13"
+
+          if [ -f "$FILE" ]; then
+            DETECTED=$(grep -oE 'gradle-[0-9]+(\.[0-9]+)*(-all|-bin)?\.zip' "$FILE" | head -1 | sed -E 's/gradle-([0-9.]+).*/\1/')
+            if [ -n "$DETECTED" ]; then
+              VERSION="$DETECTED"
+            fi
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Using Gradle $VERSION"
+          echo "Gradle version: $VERSION"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ steps.gradle.outputs.version }}
 
-      - name: Build APK
+      - name: Build Debug APK
         run: |
-          gradle --version
+          cd "${{ steps.project.outputs.dir }}"
           gradle assembleDebug --stacktrace
 
       - name: Upload APK
