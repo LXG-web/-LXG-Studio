@@ -19,7 +19,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -31,28 +31,33 @@ jobs:
           ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' | head -1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: Project ZIP not found"
+            echo "Project ZIP missing!"
             exit 1
           fi
 
           mkdir -p extracted
           unzip -oq "$ZIP" -d extracted
 
-          echo "Project extracted successfully"
-
-      - name: Fix KSP Compatibility
+      - name: Fix KSP and Kotlin Configuration
         shell: bash
         run: |
           FILE="extracted/gradle/libs.versions.toml"
+          PROP="extracted/gradle.properties"
 
-          if [ ! -f "$FILE" ]; then
-            echo "ERROR: Version catalog missing"
+          if [ ! -f "$FILE" ] || [ ! -f "$PROP" ]; then
+            echo "Required Gradle configuration missing!"
             exit 1
           fi
 
           sed -i 's/googleDevtoolsKsp = "2.3.5"/googleDevtoolsKsp = "2.2.10-2.0.2"/' "$FILE"
 
-          grep 'googleDevtoolsKsp' "$FILE"
+          if ! grep -q '^android.disallowKotlinSourceSets=' "$PROP"; then
+            echo 'android.disallowKotlinSourceSets=false' >> "$PROP"
+          else
+            sed -i 's/^android.disallowKotlinSourceSets=.*/android.disallowKotlinSourceSets=false/' "$PROP"
+          fi
+
+          echo "KSP and Kotlin configuration updated"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
