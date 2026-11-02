@@ -25,38 +25,46 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Locate Android Gradle Project
+      - name: Extract Android Project ZIP
+        shell: bash
+        run: |
+          ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' | head -1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No project ZIP found!"
+            exit 1
+          fi
+
+          mkdir -p extracted
+          unzip -oq "$ZIP" -d extracted
+
+          echo "ZIP extracted successfully"
+          find extracted -maxdepth 3 -type f | head -100
+
+      - name: Locate Gradle Project
         id: project
         shell: bash
         run: |
-          echo "Searching for Gradle project..."
-
-          FILE=$(find . -type f \( \
+          FILE=$(find extracted -type f \( \
             -name settings.gradle.kts -o \
             -name settings.gradle \
-          \) -not -path '*/.gradle/*' | head -n 1)
+          \) | head -1)
 
           if [ -z "$FILE" ]; then
-            echo "ERROR: settings.gradle(.kts) not found!"
-            echo "Repository files:"
-            find . -maxdepth 4 -type f | head -200
+            echo "ERROR: Gradle settings file missing in ZIP!"
             exit 1
           fi
 
           DIR=$(dirname "$FILE")
-          if [ "$DIR" = "." ]; then
-            DIR="."
-          fi
-
-          echo "Project found at: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $DIR"
 
       - name: Detect Gradle Version
         id: gradle
+        shell: bash
         run: |
           DIR="${{ steps.project.outputs.dir }}"
           FILE="$DIR/gradle/wrapper/gradle-wrapper.properties"
-
           VERSION="8.13"
 
           if [ -f "$FILE" ]; then
@@ -67,14 +75,13 @@ jobs:
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Gradle version: $VERSION"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ steps.gradle.outputs.version }}
 
-      - name: Build Debug APK
+      - name: Build APK
         run: |
           cd "${{ steps.project.outputs.dir }}"
           gradle assembleDebug --stacktrace
@@ -84,5 +91,5 @@ jobs:
         with:
           name: LXG-Studio-APK
           path: |
-            **/build/outputs/apk/debug/*.apk
+            extracted/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
